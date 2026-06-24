@@ -15,8 +15,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import com.vku.javaweb.model.BlindBox;
+import com.vku.javaweb.model.User; // 1. ĐÃ THÊM IMPORT USER
 import com.vku.javaweb.repository.BlindBoxRepository;
+import com.vku.javaweb.repository.UserRepository; // 2. ĐÃ THÊM IMPORT USERREPOSITORY
 import com.vku.javaweb.service.BlindBoxService;
+
+import jakarta.servlet.http.HttpSession;
 
 @Controller
 @RequestMapping("/blindbox")
@@ -28,33 +32,50 @@ public class BlindBoxController {
     @Autowired
     private BlindBoxRepository blindBoxRepository; 
 
+    @Autowired // 3. ĐÃ TIÊM USERREPOSITORY VÀO ĐỂ KHÔNG BỊ LỖI ĐỎ Ở DÒNG TRỪ TIỀN
+    private UserRepository userRepository;
+
     @GetMapping("/list")
     public String showBlindBoxList(Model model) {
         model.addAttribute("blindBoxes", blindBoxService.getAllBlindBoxes());
         return "blindbox/list";
     }
 
-    // Cơ chế mở hộp Động hoàn toàn dựa vào danh sách người dùng tự nhập
     @GetMapping("/open/{id}")
-    public String openBox(@PathVariable Long id, Model model) {
-        Optional<BlindBox> boxOpt = blindBoxService.getBlindBoxById(id);
-        if (boxOpt.isEmpty()) return "redirect:/blindbox/list";
-
-        BlindBox box = boxOpt.get();
-        if (box.getStock() > 0) {
-            box.setStock(box.getStock() - 1);
-            blindBoxService.saveBlindBox(box);
-        } else {
-            return "redirect:/blindbox/list";
+    public String openBox(@PathVariable Long id, Model model, HttpSession session) {
+        // 1. Kiểm tra đăng nhập
+        User loggedInUser = (User) session.getAttribute("loggedInUser");
+        if (loggedInUser == null) {
+            return "redirect:/auth/login";
         }
 
-        // TỰ ĐỘNG TÁCH CHUỖI THÀNH DANH SÁCH NHÂN VẬT
-        // Ví dụ: "Con Gấu, Con Thỏ" -> ["Con Gấu", "Con Thỏ"]
+        Optional<BlindBox> boxOpt = blindBoxRepository.findById(id);
+        if (boxOpt.isEmpty()) return "redirect:/blindbox/list";
+        BlindBox box = boxOpt.get();
+
+        // 2. Kiểm tra hàng trong kho
+        if (box.getStock() <= 0) {
+            return "redirect:/blindbox/list?error=outofstock";
+        }
+
+        // 3. KIỂM TRA SỐ DƯ TÀI KHOẢN CÓ ĐỦ MUA KHÔNG
+        if (loggedInUser.getBalance() < box.getPrice()) {
+            // Trả về kèm mã lỗi hụt tiền để giao diện hiển thị thông báo nạp tiền
+            return "redirect:/blindbox/list?error=notenoughmoney"; 
+        }
+
+        // 4. ĐỦ TIỀN THÌ TIẾN HÀNH TRỪ TIỀN VÀ KHUI HỘP
+        loggedInUser.setBalance(loggedInUser.getBalance() - box.getPrice());
+        userRepository.save(loggedInUser); // Đã hết lỗi đỏ vì đã khai báo userRepository ở trên
+        session.setAttribute("loggedInUser", loggedInUser); // Cập nhật lại ví tiền trên thanh menu
+
+        box.setStock(box.getStock() - 1); // Giảm 1 món trong kho
+        blindBoxRepository.save(box);
+
+        // Logic bốc thăm ngẫu nhiên nhân vật
         List<String> normalCharacters = Arrays.asList(box.getCharacterList().split(","));
         String secretCharacter = "✨ SECRET: " + box.getSecretCharacter() + " ✨";
-        
         Random rand = new Random();
-        // Tỷ lệ 10% ra con Secret hiếm, 90% ra nhân vật thường trong list
         String resultCharacter = rand.nextInt(100) < 10 ? secretCharacter : normalCharacters.get(rand.nextInt(normalCharacters.size())).trim();
 
         model.addAttribute("box", box);
@@ -107,8 +128,8 @@ public class BlindBoxController {
             box.setStock(stock);
             box.setDescription(description);
             box.setImageUrl(imageUrl);
-            box.setCharacterList(characterList);   // Cập nhật list nhân vật thường mới
-            box.setSecretCharacter(secretCharacter); // Cập nhật con secret mới
+            box.setCharacterList(characterList);   
+            box.setSecretCharacter(secretCharacter); 
             
             blindBoxRepository.save(box); 
         }

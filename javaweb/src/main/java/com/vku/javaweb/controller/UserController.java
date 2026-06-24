@@ -2,42 +2,33 @@ package com.vku.javaweb.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import com.vku.javaweb.model.User;
-import com.vku.javaweb.service.UserService;
+import com.vku.javaweb.repository.UserRepository;
+
+import jakarta.servlet.http.HttpSession;
 
 @Controller
+@RequestMapping("/user")
 public class UserController {
 
     @Autowired
-    private UserService userService;
+    private UserRepository userRepository;
 
-    // Trang chính
-  @RequestMapping("/")
-public String home(Model model) {
-    model.addAttribute("bien1", "VKU");
-    return "admin/user/trang1";
-}
-
-    // Trang form
-   @RequestMapping("/user")
-public String createPage(Model model) {
-    model.addAttribute("newUser", new User());
-    return "admin/user/create";
-}
-@RequestMapping("/users")
-public String listUser(Model model) {
-    model.addAttribute("users", userService.findAll());
-    return "admin/user/list";
-}
-    // Xử lý POST
-   @RequestMapping(value = "/admin/user/create1", method = RequestMethod.POST)
-public String saveUser(@ModelAttribute("newUser") User user) {
-    userService.save(user);
-    return "redirect:/users";
-}
+    @PostMapping("/recharge")
+    public String rechargeMoney(@RequestParam Double amount, HttpSession session) {
+        User loggedInUser = (User) session.getAttribute("loggedInUser");
+        if (loggedInUser != null && amount > 0) {
+            // Cộng tiền vào đối tượng hiện tại
+            loggedInUser.setBalance(loggedInUser.getBalance() + amount);
+            // Lưu cập nhật vào Cơ sở dữ liệu
+            userRepository.save(loggedInUser);
+            // Cập nhật lại session để giao diện hiển thị số tiền mới ngay lập tức
+            session.setAttribute("loggedInUser", loggedInUser);
+        }
+        return "redirect:/blindbox/list";
+    }
 }
